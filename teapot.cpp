@@ -164,7 +164,7 @@ void setup() {
 }
 
 // действия с кнопкой
-void batton_press(){
+void button_press(){
     if (temper() >= temp_end){
       Screen_Text(x_text + 27, y_text, "Water ready");
       time_start = millis();
