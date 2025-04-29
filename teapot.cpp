@@ -9,7 +9,7 @@ OneWire oneWire(12);  // порт подключения датчика
 DallasTemperature ds(&oneWire);
 
 /* общие настройки переменных */
-int Water_Level = 0; // уровень воды
+int cond_water = 0; // уровень воды
 bool button = false; // нажата ли кнопка
 int water_100 = 11;
 int rele_signal = 10;
@@ -17,23 +17,24 @@ int temp_end = 70; // максимальная температуру, когд�
 int temp_start; // запоминаем температуру на момент нажатия кнопки
 char ch = 'C'; // используется для вывода на монитор, как поментка градусов
 // int temper_logo = 50; // температуру при которой должно выводиться лого
-int Power = 1;
-unsigned long Time_Start = -2500000; // запоминаем время вывода разных надписей
-int Power_On = 1; // проверяем были ли процессы до
-int Time_Logo = 3000; // задаржка перед появление лого после последних действой
+int power = 1;
+unsigned long time_start = -2500000; // запоминаем время вывода разных надписей
+int power_on = 1; // проверяем были ли процессы до
+int time_logo = 3000; // задаржка перед появление лого после последних действой
 int x_text = 10; // позиция вывода текста по x
 int y_text = 33; // позиция вывода текста по y
+/* */
 
 
 /* настройка пинов */
-int Water_Level_pin = 13;
+int water_level_pin = 13;
 int button_pin = 3;
 const int kolvo_inputs = 4;
 const int Vikhodi[kolvo_inputs] = {A0, A1, A2, A3};
 char buffer[32]; // helper buffer to construct a string to be displayed
 
-
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE); // initialization for the used OLED display
+/* */
 
 /* LOGO */
 // chat "F"
@@ -84,19 +85,55 @@ void Logo(int x, int y){
 	out_T(x+36,y+0);
 	u8g2.sendBuffer();
 }
+/* */
 
+/* вывод на экран */
+// отрисовка текста в одну строку (координата X, координата Y, текст)
+void Screen_Text(int x, int y, char Text[999999]) {
+  u8g2.clearBuffer();
+  //char buffer[32]; // helper buffer to construct a string to be displayed
+  sprintf(buffer, Text); // construct a string with the progress variable
+  u8g2.drawStr(x, y, buffer); // display the string
+  u8g2.sendBuffer();
+}
+
+// отрисовка прогресс бара
+void Progress_Bar(){
+  double progress = (100 * (temper() - temp_start)) / (temp_end - temp_start);
+  u8g2.clearBuffer();
+  u8g2.setBitmapMode(1);
+  u8g2.drawFrame(12, 21, 104, 20);
+  u8g2.drawBox(14, 23, progress, 16); // draw the progressbar fill
+  sprintf(buffer, "Temper: %d%c", temper(), ch); // construct a string with the progress variable
+  u8g2.drawStr(33, 53, buffer); // display the string
+  u8g2.drawStr(0, 7, "Progress Bar Screen");
+  u8g2.drawLine(0, 9, 127, 9);
+  u8g2.sendBuffer();
+}
+
+// отрисовка текста в две строки
+void Additional_Text(int x1, int y1, int x2, int y2, int flag, char Text[999999]){
+  u8g2.clearBuffer();
+  u8g2.drawStr(x1, y1, Text);
+  sprintf(buffer, "%d", flag); 
+  u8g2.drawStr(x2, y2, buffer);
+  u8g2.sendBuffer();
+}
+/* */
+
+
+/* разные проверки */
 // проверка на температуру
 int temper() {
     ds.requestTemperatures(); 
     int temp = ds.getTempCByIndex(0);
-    Serial.println(temp);
+    //Serial.println(temp);
     return (temp);
-    
 }
 
 // проверка уровня воды
 int volume(){
-  digitalWrite(Water_Level_pin, HIGH);
+  digitalWrite(water_level_pin, HIGH);
   int text = 0;
   for(int i = 0; i < kolvo_inputs; i++){
     if (analogRead(Vikhodi[i]) > 300){
@@ -104,9 +141,10 @@ int volume(){
     }
 		Serial.print(analogRead(Vikhodi[i] ));
   }
-	Serial.println();
+	//Serial.println();
   return(text);
 }
+/* */
 
 // настройка портов
 void setup() {
@@ -122,100 +160,85 @@ void setup() {
 	for(int i = 0; i < kolvo_inputs; i++){
 		pinMode(Vikhodi[i], INPUT);
 	}
-	pinMode(Water_Level_pin, OUTPUT);
+	pinMode(water_level_pin, OUTPUT);
 }
 
-// просто цикл
-void loop() {
-    if ((Power_On && millis() - Time_Start >= Time_Logo) || Power){  
-        Power_On = 0;
-        Power = 0;
-        Logo(37,10);  
-    }  
-
-    // если нажать кнопку загарается лампочка
-    if (digitalRead(button_pin) == 1 && Water_Level){
-        button = !button;
-        delay(250);
-        if (button){
-            int flag = volume();
-            Serial.println(flag);
-            if (flag > 0){
-                // выводим на экран что воды достаточно
-                u8g2.clearBuffer();
-                sprintf(buffer, "Water level: %d%%", flag); 
-                u8g2.drawStr(x_text + 20, y_text, buffer);
-                u8g2.sendBuffer();
-                // вывод на экран Уровня воды
-                digitalWrite(rele_signal, HIGH);
-                // запоминаем температуру на момент включания чайника
-                temp_start = temper();
-            } else{
-                button = !button;
-                digitalWrite(rele_signal, LOW);
-                u8g2.clearBuffer();
-                sprintf(buffer, "Low level of Water"); // construct a string with the progress variable
-                u8g2.drawStr(x_text, y_text, buffer); // display the string
-                u8g2.sendBuffer();
-                // запоминаем время когда появилась надпись
-                Time_Start = millis();
-                Power_On = 1;
-                // вывод на экран Воды мало
-            }
-            
-        } else{
-            digitalWrite(rele_signal, LOW);
-            if (temper() < temp_end){
-                Power = 1;
-            } else {
-                u8g2.clearBuffer();
-                sprintf(buffer, "Water ready"); // construct a string with the progress variable
-                u8g2.drawStr(x_text + 20, y_text, buffer); // display the string
-                u8g2.sendBuffer();
-                Time_Start = millis();
-                Power_On = 1;
-            }
-        }
-    }
-    // проверка на температуру
+// действия с кнопкой
+void batton_press(){
     if (temper() >= temp_end){
-        // проверяем выводили 
-        if (Water_Level && button){
-            digitalWrite(rele_signal, LOW); // выключаем электричество
-            Water_Level = 0; // флаг
-            button = false;
-            // вывод что вода готова
-            u8g2.clearBuffer();
-            sprintf(buffer, "Water ready"); // construct a string with the progress variable
-            u8g2.drawStr(x_text +20, y_text, buffer); // display the string
-            u8g2.sendBuffer();
-            Time_Start = millis();
-            Power_On = 1;
-        } else {
-            // если вода меньше temp_end то мы выключаем лампочку горячей воды
-            digitalWrite(water_100, LOW);  
-            u8g2.clearBuffer();        
-        }
-        u8g2.clearBuffer();
-        
+      Screen_Text(x_text + 27, y_text, "Water ready");
+      time_start = millis();
+      power_on = 1;
     } else {
-      Water_Level = 1;
-      if (Water_Level && button){
-        if (temper() - 1 > temp_start){
-            double progress = (100 * (temper() - temp_start)) / (temp_end - temp_start);
-            u8g2.clearBuffer();
-            u8g2.setBitmapMode(1);
-            u8g2.drawFrame(12, 21, 104, 20);
-            u8g2.drawBox(14, 23, progress, 16); // draw the progressbar fill
-            sprintf(buffer, "Temper: %d%c", temper(), ch); // construct a string with the progress variable
-            u8g2.drawStr(33, 53, buffer); // display the string
-            u8g2.drawStr(0, 7, "Progress Bar Screen");
-            u8g2.drawLine(0, 9, 127, 9);
-
-
-            u8g2.sendBuffer();
+      power_on = 0;
+    }
+    if (cond_water){
+      button = !button;
+      delay(200);
+      if (button){
+        int flag = volume();
+        //Serial.println(flag);
+        if (flag > 0){
+          // выводим на экран что воды достаточно
+          Additional_Text(x_text+25, y_text, x_text+50, y_text+15, flag, "Water level:");
+          // вывод на экран Уровня воды
+          digitalWrite(rele_signal, HIGH);
+          // запоминаем температуру на момент включания чайника
+          temp_start = temper();
+        } else{
+          button = !button;
+          digitalWrite(rele_signal, LOW);
+          Screen_Text(x_text, y_text, "Low level of Water");
+          // запоминаем время когда появилась надпись
+          time_start = millis();
+          power_on = 1;
+        }        
+      } else{
+        digitalWrite(rele_signal, LOW);
+        if (temper() < temp_end){
+          power = 1;
         }
       }
     }
 }
 
+// просто цикл
+void loop() {
+  if ((power_on && millis() - time_start >= time_logo) || power){  
+    power_on = 0;
+    power = 0;
+    Logo(37,10);  
+  }
+
+  // если нажать кнопку загарается лампочка
+  if (digitalRead(button_pin) == 1){
+      button_press();
+  }
+
+  // проверка на температуру
+  if (temper() >= temp_end){
+    // проверяем выводили 
+    if (cond_water && button){
+      digitalWrite(rele_signal, LOW); // выключаем электричество
+      cond_water = 0; // флаг
+      button = false;
+      // вывод что вода готова
+      Screen_Text(x_text + 27, y_text, "Water ready");
+      // задержка перед след нажатием кнопки
+      time_start = millis();
+      power_on = 1;
+    } else {
+      // если вода меньше temp_end то мы выключаем лампочку горячей воды
+      digitalWrite(water_100, LOW);  
+      u8g2.clearBuffer();        
+    }
+    u8g2.clearBuffer();     
+  } else {
+    cond_water = 1;
+    if (cond_water && button){
+      if (temper() - 1 > temp_start){
+        Progress_Bar();
+      }
+    }
+  }
+}
