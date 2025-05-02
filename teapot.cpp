@@ -83,6 +83,7 @@ void Logo(int x, int y){
 	out_F(x+0, y+0);
 	out_P(x+22,y+12);
 	out_T(x+36,y+0);
+  Additional_Text(x-7, y+60, volume());
 	u8g2.sendBuffer();
 }
 /* */
@@ -112,12 +113,10 @@ void Progress_Bar(){
 }
 
 // отрисовка текста в две строки
-void Additional_Text(int x1, int y1, int x2, int y2, int flag, char Text[999999]){
-  u8g2.clearBuffer();
-  u8g2.drawStr(x1, y1, Text);
-  sprintf(buffer, "%d", flag); 
-  u8g2.drawStr(x2, y2, buffer);
-  u8g2.sendBuffer();
+void Additional_Text(int x, int y, int flag){
+  //u8g2.drawStr(x1, y1, Text);
+  sprintf(buffer, "Cups of tea: %d", flag); 
+  u8g2.drawStr(x, y, buffer);
 }
 /* */
 
@@ -179,8 +178,7 @@ void button_press(){
         int flag = volume();
         //Serial.println(flag);
         if (flag > 0){
-          // выводим на экран что воды достаточно
-          Additional_Text(x_text+25, y_text, x_text+50, y_text+15, flag, "Water level:");
+          Screen_Text(x_text+30, y_text, "Wait for it!");
           // вывод на экран Уровня воды
           digitalWrite(rele_signal, HIGH);
           // запоминаем температуру на момент включания чайника
@@ -207,7 +205,7 @@ void loop() {
   if ((power_on && millis() - time_start >= time_logo) || power){  
     power_on = 0;
     power = 0;
-    Logo(37,10);  
+    Logo(37,3);
   }
 
   // если нажать кнопку загарается лампочка
