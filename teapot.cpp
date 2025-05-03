@@ -23,6 +23,9 @@ int power_on = 1; // проверяем были ли процессы до
 int time_logo = 3000; // задаржка перед появление лого после последних действой
 int x_text = 10; // позиция вывода текста по x
 int y_text = 33; // позиция вывода текста по y
+int water_level_flag;
+int button_flag = 0;
+int button_flag1 = 0;
 /* */
 
 
@@ -83,7 +86,8 @@ void Logo(int x, int y){
 	out_F(x+0, y+0);
 	out_P(x+22,y+12);
 	out_T(x+36,y+0);
-  Additional_Text(x-7, y+60, volume());
+  water_level_flag = volume();
+  Additional_Text(x-7, y+60, water_level_flag, "Cups of tea: %d");
 	u8g2.sendBuffer();
 }
 /* */
@@ -113,9 +117,9 @@ void Progress_Bar(){
 }
 
 // отрисовка текста в две строки
-void Additional_Text(int x, int y, int flag){
+void Additional_Text(int x, int y, int flag, char text[999999]){
   //u8g2.drawStr(x1, y1, Text);
-  sprintf(buffer, "Cups of tea: %d", flag); 
+  sprintf(buffer, text, flag); 
   u8g2.drawStr(x, y, buffer);
 }
 /* */
@@ -138,7 +142,7 @@ int volume(){
     if (analogRead(Vikhodi[i]) > 300){
       text++;
     }
-		Serial.print(analogRead(Vikhodi[i] ));
+		//Serial.print(analogRead(Vikhodi[i] ));
   }
 	//Serial.println();
   return(text);
@@ -200,17 +204,91 @@ void button_press(){
     }
 }
 
+bool flag111 = false;
+uint32_t btnTimer = 0;
+bool flag1111 = false;
+uint32_t btnTimer1 = 0;
+
 // просто цикл
 void loop() {
-  if ((power_on && millis() - time_start >= time_logo) || power){  
+  if ((power_on && millis() - time_start >= time_logo) || power || water_level_flag != volume()){  
     power_on = 0;
     power = 0;
     Logo(37,3);
   }
 
-  // если нажать кнопку загарается лампочка
-  if (digitalRead(button_pin) == 1){
+  // поведенте кнопуки 
+  bool btnState = digitalRead(button_pin);
+  if (btnState && !flag111 && millis() - btnTimer > 100) {
+    flag111 = true;
+    btnTimer = millis();
+    button_flag = 1;
+  }
+
+  if (btnState && flag111 && millis() - btnTimer > 400) {
+    btnTimer = millis();
+    button_flag = 2;
+  }
+
+  if (!btnState && flag111 && millis() - btnTimer > 500) {
+    flag111 = false;
+    btnTimer = millis();
+    //Serial.println("release");
+  }
+  if (millis() - btnTimer > 400){
+    if (button_flag == 1){
       button_press();
+      button_flag = 0;
+      //Serial.println("press");
+    }
+    if (button_flag == 2){
+      int fmillis = millis();
+      temp_end = 50;
+      while (millis() - fmillis != 150000){
+        if (temp_end > 100){
+          temp_end = 50;
+        }
+        bool btnState1 = digitalRead(button_pin);
+        if (btnState1 && !flag1111 && millis() - btnTimer1 > 100) {
+          flag1111 = true;
+          btnTimer1 = millis();
+          button_flag1 = 1;
+          fmillis = millis();
+        }
+
+        if (btnState1 && flag1111 && millis() - btnTimer1 > 400) {
+          btnTimer1 = millis();
+          button_flag1 = 2;
+          fmillis = millis();
+        }
+
+        if (!btnState1 && flag1111 && millis() - btnTimer1 > 500) {
+          flag1111 = false;
+          btnTimer1 = millis();
+          fmillis = millis();
+          //Serial.println("release");
+        }
+        if (millis() - btnTimer1 > 400){
+          if (button_flag1 == 1){
+            temp_end += 5;
+            button_flag1 = 0;
+            fmillis = millis();
+            //Serial.println("press");
+          }
+          if (button_flag1 == 2){
+            button_press();
+            button_flag1 = 0;
+            fmillis = millis();
+            break;
+          }
+        }
+        u8g2.clearBuffer();
+        Additional_Text(x_text, y_text, temp_end, "Degrees: %dC");
+        u8g2.sendBuffer();
+        //Serial.println("press hold");
+      }
+      button_flag = 0;
+    }
   }
 
   // проверка на температуру
