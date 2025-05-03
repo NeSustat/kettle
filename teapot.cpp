@@ -13,7 +13,16 @@ int cond_water = 0; // уровень воды
 bool button = false; // нажата ли кнопка
 int water_100 = 11;
 int rele_signal = 10;
-int temp_end = 70; // максимальная температуру, когда надо отключить чайник
+int temp_end = 100; // максимальная температуру, когда надо отключить чайник
+int end_temper = 100;
+int fmillis = 0;
+
+// настройки настроек для настроек
+int temp_start_const = 50;
+int temp_change = 5;
+int time_to_hold = 350;
+int time_to_press = 30;
+
 int temp_start; // запоминаем температуру на момент нажатия кнопки
 char ch = 'C'; // используется для вывода на монитор, как поментка градусов
 // int temper_logo = 50; // температуру при которой должно выводиться лого
@@ -26,6 +35,8 @@ int y_text = 33; // позиция вывода текста по y
 int water_level_flag;
 int button_flag = 0;
 int button_flag1 = 0;
+int button_mode = 0;
+int time_when_was_first_click = 0;
 /* */
 
 
@@ -38,6 +49,10 @@ char buffer[32]; // helper buffer to construct a string to be displayed
 
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE); // initialization for the used OLED display
 /* */
+
+
+
+
 
 /* LOGO */
 // chat "F"
@@ -92,6 +107,10 @@ void Logo(int x, int y){
 }
 /* */
 
+
+
+
+
 /* вывод на экран */
 // отрисовка текста в одну строку (координата X, координата Y, текст)
 void Screen_Text(int x, int y, char Text[999999]) {
@@ -104,7 +123,7 @@ void Screen_Text(int x, int y, char Text[999999]) {
 
 // отрисовка прогресс бара
 void Progress_Bar(){
-  double progress = (100 * (temper() - temp_start)) / (temp_end - temp_start);
+  double progress = (100 * (temper() - temp_start)) / (end_temper - temp_start);
   u8g2.clearBuffer();
   u8g2.setBitmapMode(1);
   u8g2.drawFrame(12, 21, 104, 20);
@@ -123,6 +142,9 @@ void Additional_Text(int x, int y, int flag, char text[999999]){
   u8g2.drawStr(x, y, buffer);
 }
 /* */
+
+
+
 
 
 /* разные проверки */
@@ -149,6 +171,10 @@ int volume(){
 }
 /* */
 
+
+
+
+
 // настройка портов
 void setup() {
 	u8g2.setBitmapMode(1);
@@ -166,9 +192,13 @@ void setup() {
 	pinMode(water_level_pin, OUTPUT);
 }
 
+
+
+
+
 // действия с кнопкой
 void button_press(){
-    if (temper() >= temp_end){
+    if (temper() >= end_temper){
       Screen_Text(x_text + 27, y_text, "Water ready");
       time_start = millis();
       power_on = 1;
@@ -197,26 +227,89 @@ void button_press(){
         }        
       } else{
         digitalWrite(rele_signal, LOW);
-        if (temper() < temp_end){
+        if (temper() < end_temper){
           power = 1;
         }
       }
     }
 }
 
-bool flag111 = false;
-uint32_t btnTimer = 0;
-bool flag1111 = false;
-uint32_t btnTimer1 = 0;
+// смотрим что хочет пользователь (поменять или просто запустить чайник)
+int what_i_need_to_do(){
+  button_mode = 0;
+  int button_click = digitalRead(button_pin);
+  if (button_click){
+    if (time_when_was_first_click == 0){
+      time_when_was_first_click = millis();
+    }
+    return 0;
+  } else{
+    if (millis() - time_when_was_first_click > time_to_press && time_when_was_first_click){
+      button_mode = 1;
+    }
+    if (millis() - time_when_was_first_click > time_to_hold && time_when_was_first_click){
+      button_mode = 2;
+      Serial.println(millis());
+    }
+    time_when_was_first_click=0;
+    return button_mode;
+  }
+}
+
+// задаем теперературы которую хочет пользователь если хочет
+void konechnaya_end_temper(){
+  int suchka = what_i_need_to_do();
+  if (suchka == 1){
+    //Serial.println(100);
+    button_press();
+  } 
+  else if (suchka == 2){
+    fmillis = millis();
+    end_temper = temp_start_const;
+    while (true){
+      /*
+      if (millis() - fmillis >= 4500){
+        end_temper = temp_end;
+        Serial.println("end");
+        break;
+      }
+      */
+      int qwe = what_i_need_to_do();
+      if (qwe == 1){
+        fmillis = millis();
+        if (end_temper >= 100){
+          end_temper = temp_start_const;
+        } else{
+          end_temper += temp_change;
+        }
+        //Serial.println(end_temper);
+      }
+      else if (qwe == 2){
+        fmillis = millis();
+        //Serial.println(end_temper);
+        button_press();
+        break;
+      }
+      u8g2.clearBuffer();
+      Additional_Text(x_text, y_text, end_temper, "Degrees: %dC");
+      u8g2.sendBuffer();
+    }
+  }
+}
 
 // просто цикл
 void loop() {
+  // отрисовка начального экрана
   if ((power_on && millis() - time_start >= time_logo) || power || water_level_flag != volume()){  
     power_on = 0;
     power = 0;
     Logo(37,3);
   }
 
+  // смотрим что хочет пользователь
+  konechnaya_end_temper();
+
+/*
   // поведенте кнопуки 
   bool btnState = digitalRead(button_pin);
   if (btnState && !flag111 && millis() - btnTimer > 100) {
@@ -290,9 +383,10 @@ void loop() {
       button_flag = 0;
     }
   }
+  */
 
   // проверка на температуру
-  if (temper() >= temp_end){
+  if (temper() >= end_temper){
     // проверяем выводили 
     if (cond_water && button){
       digitalWrite(rele_signal, LOW); // выключаем электричество
@@ -303,6 +397,7 @@ void loop() {
       // задержка перед след нажатием кнопки
       time_start = millis();
       power_on = 1;
+      end_temper = temp_end; // значение температуры по умолчанию
     } else {
       // если вода меньше temp_end то мы выключаем лампочку горячей воды
       digitalWrite(water_100, LOW);  
@@ -310,7 +405,9 @@ void loop() {
     }
     u8g2.clearBuffer();     
   } else {
+    //Serial.println(end_temper);
     cond_water = 1;
+    //Serial.println(temper());
     if (cond_water && button){
       if (temper() - 1 > temp_start){
         Progress_Bar();
