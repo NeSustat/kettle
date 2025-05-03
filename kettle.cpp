@@ -3,6 +3,7 @@
 #include <Wire.h>
 #include "OneWire.h"
 #include "DallasTemperature.h"
+#include "GyverPID.h"
 
 // Константы для экономии памяти
 const uint8_t ONE_WIRE_PIN = 12;
@@ -26,6 +27,13 @@ OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature ds(&oneWire);
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
+
+// PID
+GyverPID regulator(0.1, 0.05, 0.01, 10);  // коэф. П, коэф. И, коэф. Д, период дискретизации dt (мс)
+// или так:
+// GyverPID regulator(0.1, 0.05, 0.01);	// можно П, И, Д, без dt, dt будет по умолч. 100 мс
+
+
 // Переменные состояния
 struct {
   uint8_t end_temp = DEFAULT_TEMP_END;
@@ -46,6 +54,8 @@ struct {
   uint32_t end_settings = 6000;
   uint32_t last_check_level_water = 0;
   uint32_t check_change = 10000;
+  uint32_t time_end = 0;
+  uint16_t tine_end_const = 600000;
 } timing;
 
 // Буфер для вывода текста (уменьшенный размер)
@@ -163,7 +173,7 @@ void handleButtonPress() {
       uint8_t level = getWaterLevel();
       if (level > 0) {
         displayText(40, 33, "Wait for it!");
-        digitalWrite(RELAY_PIN, HIGH);
+        // digitalWrite(RELAY_PIN, HIGH);
         state.start_temp = getTemperature();
       } else {
         state.button_state = false;
@@ -246,11 +256,16 @@ void setup() {
   for(uint8_t i = 0; i < NUM_INPUTS; i++) {
     pinMode(INPUT_PINS[i], INPUT);
   }
+  regulator.setDirection(NORMAL); // направление регулирования (NORMAL/REVERSE). ПО УМОЛЧАНИЮ СТОИТ NORMAL
+  regulator.setLimits(0, 255);    // пределы (ставим для 8 битного ШИМ). ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
+  regulator.setpoint = 50;        // сообщаем регулятору температуру, которую он должен поддерживать
+
+
 }
 
 void loop() {
   if (millis() - timing.last_check_level_water >= timing.check_change){
-    timing.last_check_level_water = millis();
+    timing.lregulator.input = temp;ast_check_level_water = millis();
     if (state.water_level != getWaterLevel()){
       state.power = true;
     }
@@ -269,7 +284,7 @@ void loop() {
   // Проверка температуры
   if (getTemperature() >= state.end_temp) {
     if (state.water_ok && state.button_state) {
-      digitalWrite(RELAY_PIN, LOW);
+      timing.time_end = millis();
       state.water_ok = false;
       state.button_state = false;
       displayText(37, 33, "Water ready");
@@ -279,11 +294,16 @@ void loop() {
     }
   } else {
     state.water_ok = true;
-    
+    regulator.input = temper();
+    analogWrite(3, regulator.getResultTimer()); 
     if (state.water_ok && state.button_state) {
       if (getTemperature() - 1 > state.start_temp) {
         displayProgressBar();
       }
     }
+  }
+  if (timing.time_end && millis() - timing.time_end >= timing.time_end_const){
+    timing.time_end = 0;
+    digitalWrite(RELAY_PIN, LOW);
   }
 }
