@@ -52,7 +52,7 @@ struct {
   uint32_t time_end = 0;
   uint16_t tine_end_const = 600000;
   uint32_t last_time_PID = 0;
-  float dt = 1000;
+  float dtime = 1000;
 } timing;
 
 // Буфер для вывода текста (уменьшенный размер)
@@ -68,7 +68,7 @@ uint8_t getWaterLevel();
 void handleButtonPress();
 uint8_t checkButtonAction();
 void handleTemperatureSetting();
-int computePID(float input, float setpoint, float kp, float ki, float kd, float dt);
+int computePID(float input, float setpoint, float kp, float ki, float kd, float dtime);
 
 // Логотип - оптимизированные функции рисования
 void drawF(int8_t x, int8_t y) {
@@ -243,7 +243,7 @@ void handleTemperatureSetting() {
 int computePID(float input, float setpoint, float kp, float ki, float kd, float dt){
     float err = setpoint - input;
     static float integral = 0, prevErr = 0;
-    integral += err * dt;
+    integral += err * dtime;
     float differential = (err - prevErr) / dt;
     prevErr = err;
     return (err * kp + integral * ki + differential * kd);
@@ -296,9 +296,9 @@ void loop() {
     }
   } else {
     state.water_ok = true;
-    if (millis() - timing.last_time_PID >= dt && timing.timing.last_time_PID){
+    if (millis() - timing.last_time_PID >= timing.dtime && timing.last_time_PID){
       analogWrite(RELAY_PIN, computePID(getTemperature(), state.end_temp, state.proportional_coefficient, 
-                  state.integral_coefficient, state.differential_coefficient, timing.dt / 1000))
+                  state.integral_coefficient, state.differential_coefficient, timing.dtime / 1000));
       timing.last_time_PID = millis();
     }
     if (state.water_ok && state.button_state) {
