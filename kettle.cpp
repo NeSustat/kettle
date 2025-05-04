@@ -50,7 +50,7 @@ struct {
   uint32_t last_check_level_water = 0;
   uint32_t check_change = 10000;
   uint32_t time_end = 0;
-  uint16_t tine_end_const = 600000;
+  uint16_t time_end_const = 600000;
   uint32_t last_time_PID = 0;
   float dtime = 1000;
 } timing;
@@ -241,12 +241,12 @@ void handleTemperatureSetting() {
 }
 
 int computePID(float input, float setpoint, float kp, float ki, float kd, float dt){
-    float err = setpoint - input;
+    float proportional = setpoint - input;
     static float integral = 0, prevErr = 0;
-    integral += err * dtime;
-    float differential = (err - prevErr) / dt;
-    prevErr = err;
-    return (err * kp + integral * ki + differential * kd);
+    integral += proportional * dt;
+    float differential = (proportional - prevErr) / dt;
+    prevErr = proportional;
+    return (proportional * kp + integral * ki + differential * kd);
 }
 
 void setup() {
