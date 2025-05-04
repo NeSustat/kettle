@@ -36,6 +36,9 @@ struct {
   bool water_ok = false;
   uint8_t water_level = 0;
   uint8_t button_mode = 0;
+  float proportional_coefficient = 1;
+  float integral_coefficient = 1;
+  float differential_coefficient = 1;
 } state;
 
 // Временные переменные
@@ -49,9 +52,6 @@ struct {
   uint32_t time_end = 0;
   uint16_t tine_end_const = 600000;
   uint32_t last_time_PID = 0;
-  float proportional_coefficient = 1;
-  float integral_coefficient = 1;
-  float differential_coefficient = 1;
   float dt = 1000;
 } timing;
 
@@ -296,8 +296,9 @@ void loop() {
     }
   } else {
     state.water_ok = true;
-    if (millis() - last_time_PID >= dt && timing.last_time_PID){
-      analogWrite(RELAY_PIN, computePID(tempet(), end_temper, proportional_coefficient, integral_coefficient, differential_coefficient, dt / 1000))
+    if (millis() - timing.last_time_PID >= dt && timing.timing.last_time_PID){
+      analogWrite(RELAY_PIN, computePID(getTemperature(), state.end_temp, state.proportional_coefficient, 
+                  state.integral_coefficient, state.differential_coefficient, timing.dt / 1000))
       timing.last_time_PID = millis();
     }
     if (state.water_ok && state.button_state) {
