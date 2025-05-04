@@ -36,9 +36,9 @@ struct {
   bool water_ok = false;
   uint8_t water_level = 0;
   uint8_t button_mode = 0;
-  float proportional_coefficient = 1;
-  float integral_coefficient = 1;
-  float differential_coefficient = 1;
+  const float proportional_coefficient = 1;
+  const float integral_coefficient = 1;
+  const float differential_coefficient = 1;
 } state;
 
 // Временные переменные
@@ -52,7 +52,7 @@ struct {
   uint32_t time_end = 0;
   uint16_t time_end_const = 600000;
   uint32_t last_time_PID = 0;
-  float dtime = 1000;
+  const float dtime = 1000;
 } timing;
 
 // Буфер для вывода текста (уменьшенный размер)
