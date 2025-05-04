@@ -46,6 +46,13 @@ struct {
   uint32_t end_settings = 6000;
   uint32_t last_check_level_water = 0;
   uint32_t check_change = 10000;
+  uint32_t time_end = 0;
+  uint16_t tine_end_const = 600000;
+  uint32_t last_time_PID = 0;
+  float proportional_coefficient = 1;
+  float integral_coefficient = 1;
+  float differential_coefficient = 1;
+  float dt = 1000;
 } timing;
 
 // Буфер для вывода текста (уменьшенный размер)
@@ -61,6 +68,7 @@ uint8_t getWaterLevel();
 void handleButtonPress();
 uint8_t checkButtonAction();
 void handleTemperatureSetting();
+int computePID(float input, float setpoint, float kp, float ki, float kd, float dt);
 
 // Логотип - оптимизированные функции рисования
 void drawF(int8_t x, int8_t y) {
@@ -163,11 +171,11 @@ void handleButtonPress() {
       uint8_t level = getWaterLevel();
       if (level > 0) {
         displayText(40, 33, "Wait for it!");
-        digitalWrite(RELAY_PIN, HIGH);
+        timing.last_time_PID = 1;
         state.start_temp = getTemperature();
       } else {
         state.button_state = false;
-        digitalWrite(RELAY_PIN, LOW);
+        timing.time_end = 1;
         displayText(10, 33, "Low water level");
         timing.display_time = millis();
         state.power_on = true;
@@ -232,6 +240,15 @@ void handleTemperatureSetting() {
   }
 }
 
+int computePID(float input, float setpoint, float kp, float ki, float kd, float dt){
+    float err = setpoint - input;
+    static float integral = 0, prevErr = 0;
+    integral += err * dt;
+    float differential = (err - prevErr) / dt;
+    prevErr = err;
+    return (err * kp + integral * ki + differential * kd);
+}
+
 void setup() {
   u8g2.setBitmapMode(1);
   u8g2.setFont(u8g2_font_helvB08_tr);
@@ -269,7 +286,7 @@ void loop() {
   // Проверка температуры
   if (getTemperature() >= state.end_temp) {
     if (state.water_ok && state.button_state) {
-      digitalWrite(RELAY_PIN, LOW);
+      timing.time_end = millis();
       state.water_ok = false;
       state.button_state = false;
       displayText(37, 33, "Water ready");
@@ -279,11 +296,19 @@ void loop() {
     }
   } else {
     state.water_ok = true;
-    
+    if (millis() - last_time_PID >= dt && timing.last_time_PID){
+      analogWrite(RELAY_PIN, computePID(tempet(), end_temper, proportional_coefficient, integral_coefficient, differential_coefficient, dt / 1000))
+      timing.last_time_PID = millis();
+    }
     if (state.water_ok && state.button_state) {
       if (getTemperature() - 1 > state.start_temp) {
         displayProgressBar();
       }
     }
+  }
+  if (timing.time_end && millis() - timing.time_end >= timing.time_end_const){
+    timing.time_end = 0;
+    timing.last_time_PID = 0;
+    digitalWrite(RELAY_PIN, LOW);
   }
 }
