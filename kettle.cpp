@@ -23,6 +23,9 @@ const uint16_t HOLD_TIME = 200;
 const uint16_t PRESS_TIME = 20;
 const uint16_t LOGO_DISPLAY_TIME = 180000;
 
+// flags
+volatile bool intFlag = false;   // флаг
+
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature ds(&oneWire);
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
@@ -71,6 +74,7 @@ uint8_t getWaterLevel();
 void handleButtonPress();
 uint8_t checkButtonAction();
 void handleTemperatureSetting();
+void buttonTick();
 
 // Логотип - оптимизированные функции рисования
 void drawF(int8_t x, int8_t y) {
@@ -191,7 +195,7 @@ void handleButtonPress() {
 
 uint8_t checkButtonAction() {
   state.button_mode = 0;
-  if (digitalRead(BUTTON_PIN)) {
+  if (intFlag) {
     if (timing.first_click_time == 0) {
       timing.first_click_time = millis();
     }
@@ -203,6 +207,8 @@ uint8_t checkButtonAction() {
     timing.first_click_time = 0;
     
     if (elapsed > PRESS_TIME) state.button_mode = 1;
+  
+  pinMode(RELAY_PIN, OUTPUT);
     if (elapsed > HOLD_TIME) state.button_mode = 2;
   }
   
@@ -249,7 +255,7 @@ void setup() {
   Serial.begin(9600);
   ds.begin();
   
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  attachInterrupt(BUTTON_PIN, buttonTick, FALLING);
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(WATER_LEVEL_PIN, OUTPUT);
   
@@ -261,6 +267,10 @@ void setup() {
   regulator.setpoint = 50;        // сообщаем регулятору температуру, которую он должен поддерживать
 
 
+}
+
+void buttonTick() {
+  intFlag = true;   // подняли флаг прерывания
 }
 
 void loop() {
