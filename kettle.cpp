@@ -75,7 +75,7 @@ int8_t getTemperature();
 uint8_t getWaterLevel();
 void handleButtonPress();
 uint8_t checkButtonAction();
-void handleTemperatureSetting();
+void handleTemperatureSetting(uint8_t action);
 void buttonTick();
 
 // Логотип - оптимизированные функции рисования
