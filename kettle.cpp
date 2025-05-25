@@ -61,6 +61,8 @@ struct {
   uint16_t tine_end_const = 600000;
 } timing;
 
+uint8_t action = 0;
+
 // Буфер для вывода текста (уменьшенный размер)
 char display_buffer[24];
 
@@ -215,8 +217,7 @@ uint8_t checkButtonAction() {
   return state.button_mode;
 }
 
-void handleTemperatureSetting() {
-  uint8_t action = checkButtonAction();
+void handleTemperatureSetting(uint8_t action) {
   
   if (action == 1) {
     handleButtonPress();
@@ -270,7 +271,8 @@ void setup() {
 }
 
 void buttonTick() {
-  intFlag = true;   // подняли флаг прерывания
+  intFlag = !intFlag;   // подняли флаг прерывания
+  uint8_t action = checkButtonAction();
 }
 
 void loop() {
@@ -289,7 +291,7 @@ void loop() {
   }
 
   // Обработка действий пользователя
-  handleTemperatureSetting();
+  handleTemperatureSetting(action);
 
   // Проверка температуры
   if (getTemperature() >= state.end_temp) {
