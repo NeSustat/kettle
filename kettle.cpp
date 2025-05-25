@@ -306,7 +306,7 @@ void loop() {
     state.water_ok = true;
     regulator.input = temper();
     analogWrite(RELAY_PIN, regulator.getResultTimer()); 
-    if (state.water_ok && state.button_state) {
+    if (state.button_state) {
       if (getTemperature() - 1 > state.start_temp) {
         displayProgressBar();
       }
