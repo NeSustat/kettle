@@ -183,13 +183,13 @@ void handleButtonPress() {
         state.start_temp = getTemperature();
       } else {
         state.button_state = false;
-        digitalWrite(RELAY_PIN, LOW);
+        digitalWrite(RELAY_PIN, HIGH);
         displayText(10, 33, "Low water level");
         timing.display_time = millis();
         state.power_on = true;
       }
     } else {
-      digitalWrite(RELAY_PIN, LOW);
+      digitalWrite(RELAY_PIN, HIGH);
       if (getTemperature() < state.end_temp) state.power = true;
     }
   }
@@ -316,6 +316,6 @@ void loop() {
   }
   if (timing.time_end && millis() - timing.time_end >= timing.time_end_const){
     timing.time_end = 0;
-    digitalWrite(RELAY_PIN, LOW);
+    digitalWrite(RELAY_PIN, HIGH);
   }
 }
