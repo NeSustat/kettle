@@ -25,11 +25,13 @@ struct {
   uint16_t end_settings = 6000;
   const uint16_t HOLD_TIME = 450;
   const uint16_t LOGO_DISPLAY_TIME = 65056;
+  uint32_t timeEndHold = 60000 * 3;
 } consts;
 
 // хуета и хуй мне в рот и род 
 uint8_t countButtonClick = 0;
 bool flagHueta = true;
+bool flagSpermoed = false;
 
 // Настройки времени
 
@@ -54,6 +56,7 @@ struct {
   uint32_t last_check_level_water = 0;
   uint32_t timeButtonBounce = 0;
   uint32_t timeLastCheckTemp = 0;
+  uint32_t timeEndWork = 0;
 } timing;
 
 // Буфер для вывода текста (уменьшенный размер)
@@ -70,6 +73,8 @@ void buttonTick();
 void kettleOffOn();
 void checkTemp();
 void workKettle();
+void drawfLOGO();
+void tempMaintein();
 
 // Логотип - оптимизированные функции рисования
 void drawF(int8_t x, int8_t y) {
@@ -168,6 +173,8 @@ void workKettle(){
         state.power_on = true;
         state.button_state = false;
         digitalWrite(RELAY_PIN, HIGH);
+        timing.timeEndWork = millis();
+        flagSpermoed = false;
         timing.display_time = millis();
         break;
       }
@@ -179,6 +186,21 @@ void workKettle(){
   }
 }
 
+void tempMaintein(){
+    if (flagSpermoed){
+        state.tempStatus = getTemperature();
+        if (millis() - timing.timeEndWork <= consts.timeEndHold){
+            if (state.tempStatus >= state.end_temp){
+                digitalWrite(RELAY_PIN, HIGH);
+            } else if (state.tempStatus <= state.end_temp - 3){
+                digitalWrite(RELAY_PIN, LOW);
+            }
+        } else{
+            flagSpermoed = false;
+        }
+    }
+}
+
 // check temp
 void checkTemp(){
   state.tempStatus = getTemperature();
@@ -188,6 +210,8 @@ void checkTemp(){
     displayText(37, 33, "Water ready");
     state.power_on = true;
     state.button_state = false;
+    flagSpermoed = true;
+    timing.timeEndWork = millis();
     digitalWrite(RELAY_PIN, HIGH);
   } else {    
     state.button_state = true;
@@ -256,6 +280,22 @@ void buttonTick() {
   }
 }
 
+void drawfLOGO(){
+  if (millis() - timing.last_check_level_water >= consts.check_change){
+    timing.last_check_level_water = millis();
+    if (state.water_level != getWaterLevel()){
+      state.power = true;
+    }
+  }
+  // Отображение логотипа при необходимости
+  if ((flagHueta && state.power_on && (millis() - timing.display_time >= consts.LOGO_DISPLAY_TIME)) || 
+      state.power && flagHueta) {
+    state.power_on = false;
+    state.power = false;
+    displayLogo(37, 3);
+  }
+}
+
 void setup() {
   u8g2.setBitmapMode(1);
   u8g2.setFont(u8g2_font_helvB08_tr);
@@ -277,18 +317,7 @@ void setup() {
 void loop() {
   // Serial.println(getTemperature());
   kettleOffOn();
-  if (millis() - timing.last_check_level_water >= consts.check_change){
-    timing.last_check_level_water = millis();
-    if (state.water_level != getWaterLevel()){
-      state.power = true;
-    }
-  }
-  // Отображение логотипа при необходимости
-  if ((flagHueta && state.power_on && (millis() - timing.display_time >= consts.LOGO_DISPLAY_TIME)) || 
-      state.power && flagHueta) {
-    state.power_on = false;
-    state.power = false;
-    displayLogo(37, 3);
-  }
+  tempMaintein();
+  drawfLOGO();
 }
 
