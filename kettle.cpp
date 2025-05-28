@@ -3,68 +3,61 @@
 #include <Wire.h>
 #include "OneWire.h"
 #include "DallasTemperature.h"
-#include "GyverPID.h"
 
 // Константы для экономии памяти
 const uint8_t ONE_WIRE_PIN = 12;
 const uint8_t WATER_LEVEL_PIN = 13;
-const uint8_t BUTTON_PIN = 3;
+const uint8_t BUTTON_PIN = 2;
 const uint8_t RELAY_PIN = 6;
 const uint8_t INPUT_PINS[] = {A0, A1, A2, A3};
 const uint8_t NUM_INPUTS = 4;
 
 // Настройки температуры
-const uint8_t DEFAULT_TEMP_END = 100;
-const uint8_t TEMP_START_CONST = 50;
-const uint8_t TEMP_CHANGE_STEP = 5;
+const int8_t DEFAULT_TEMP_END = 100;
+const int8_t TEMP_START_CONST = 50;
+const int8_t TEMP_CHANGE_STEP = 5;
+
+// const
+struct {
+  uint16_t check_change = 10000;
+  uint8_t timeBottonDelay = 200;
+  uint8_t constTimeCheckTemp = 0;
+  uint16_t end_settings = 6000;
+  const uint16_t HOLD_TIME = 450;
+  const uint16_t LOGO_DISPLAY_TIME = 65056;
+} consts;
+
+// хуета и хуй мне в рот и род 
+uint8_t countButtonClick = 0;
+bool flagHueta = true;
 
 // Настройки времени
-const uint16_t HOLD_TIME = 200;
-const uint16_t PRESS_TIME = 20;
-const uint16_t LOGO_DISPLAY_TIME = 180000;
-
-// flags
-volatile bool intFlag = false;   // флаг
 
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature ds(&oneWire);
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
-
-// PID
-GyverPID regulator(0.1, 0.05, 0.01, 10);  // коэф. П, коэф. И, коэф. Д, период дискретизации dt (мс)
-// или так:
-// GyverPID regulator(0.1, 0.05, 0.01);	// можно П, И, Д, без dt, dt будет по умолч. 100 мс
-
-
 // Переменные состояния
 struct {
-  uint8_t end_temp = DEFAULT_TEMP_END;
+  int8_t end_temp = DEFAULT_TEMP_END;
   uint8_t start_temp;
   bool button_state = false;
   bool power_on = true;
   bool power = true;
-  bool water_ok = false;
   uint8_t water_level = 0;
-  uint8_t button_mode = 0;
+  int8_t tempStatus = 0;
 } state;
 
 // Временные переменные
 struct {
-  uint32_t first_click_time = 0;
   uint32_t display_time = 0;
-  uint32_t setting_time = 0;
-  uint32_t end_settings = 6000;
   uint32_t last_check_level_water = 0;
-  uint32_t check_change = 10000;
-  uint32_t time_end = 0;
-  uint16_t tine_end_const = 600000;
+  uint32_t timeButtonBounce = 0;
+  uint32_t timeLastCheckTemp = 0;
 } timing;
 
-uint8_t action = 0;
-
 // Буфер для вывода текста (уменьшенный размер)
-char display_buffer[24];
+char display_buffer[16];
 
 // Прототипы функций
 void displayLogo(int8_t x, int8_t y);
@@ -73,10 +66,10 @@ void displayProgressBar();
 void displayAdditionalText(int8_t x, int8_t y, const char* format, uint8_t value);
 int8_t getTemperature();
 uint8_t getWaterLevel();
-void handleButtonPress();
-uint8_t checkButtonAction();
-void handleTemperatureSetting(uint8_t action);
 void buttonTick();
+void kettleOffOn();
+void checkTemp();
+void workKettle();
 
 // Логотип - оптимизированные функции рисования
 void drawF(int8_t x, int8_t y) {
@@ -129,13 +122,13 @@ void displayText(int8_t x, int8_t y, const char* text) {
   u8g2.sendBuffer();
 }
 
-void displayProgressBar() {
+void displayProgressBar(uint8_t tempCur) {
   uint8_t progress = (100 * (getTemperature() - state.start_temp)) / (state.end_temp - state.start_temp);
   u8g2.clearBuffer();
   u8g2.setBitmapMode(1);
   u8g2.drawFrame(12, 21, 104, 20);
   u8g2.drawBox(14, 23, progress, 16);
-  snprintf(display_buffer, sizeof(display_buffer), "Temp: %dC", getTemperature());
+  snprintf(display_buffer, sizeof(display_buffer), "Temp: %dC", tempCur);
   u8g2.drawStr(33, 53, display_buffer);
   u8g2.drawStr(0, 7, "Progress Bar");
   u8g2.drawLine(0, 9, 127, 9);
@@ -150,7 +143,6 @@ void displayAdditionalText(int8_t x, int8_t y, const char* format, uint8_t value
 int8_t getTemperature() {
   ds.requestTemperatures(); 
   int8_t temp = ds.getTempCByIndex(0);
-  Serial.println(temp);
   return temp;
 }
 
@@ -163,89 +155,104 @@ uint8_t getWaterLevel() {
   return level;
 }
 
-void handleButtonPress() {
-  if (getTemperature() >= state.end_temp) {
-    displayText(37, 33, "Water ready");
-    timing.display_time = millis();
-    state.power_on = true;
-    return;
-  }
-
-  if (state.water_ok) {
-    state.button_state = !state.button_state;
-    delay(200);
-    
-    if (state.button_state) {
-      uint8_t level = getWaterLevel();
-      if (level > 0) {
-        displayText(40, 33, "Wait for it!");
-        // digitalWrite(RELAY_PIN, HIGH);
-        state.start_temp = getTemperature();
-      } else {
+// работа чайника
+void workKettle(){
+  countButtonClick = 0;
+  timing.timeLastCheckTemp = millis();
+  while(state.button_state){
+    if (millis() - timing.timeLastCheckTemp >= consts.constTimeCheckTemp){
+      state.tempStatus = getTemperature();
+      if (state.tempStatus >= state.end_temp && state.tempStatus > 0){
+        //Serial.println("Hui");
+        displayText(37, 33, "Water ready");
+        state.power_on = true;
         state.button_state = false;
         digitalWrite(RELAY_PIN, HIGH);
-        displayText(10, 33, "Low water level");
         timing.display_time = millis();
-        state.power_on = true;
+        break;
       }
-    } else {
-      digitalWrite(RELAY_PIN, HIGH);
-      if (getTemperature() < state.end_temp) state.power = true;
+      timing.timeLastCheckTemp = millis();
+      if (state.tempStatus - 1 > state.start_temp) {
+          displayProgressBar(state.tempStatus);
+      }
     }
   }
 }
 
-uint8_t checkButtonAction() {
-  state.button_mode = 0;
-  if (intFlag) {
-    if (timing.first_click_time == 0) {
-      timing.first_click_time = millis();
-    }
-    return 0;
+// check temp
+void checkTemp(){
+  state.tempStatus = getTemperature();
+  if (state.tempStatus >= state.end_temp && state.tempStatus > 0) {
+    //Serial.println(state.tempStatus);
+    // Serial.println(getTemperature());
+    displayText(37, 33, "Water ready");
+    state.power_on = true;
+    state.button_state = false;
+    digitalWrite(RELAY_PIN, HIGH);
+  } else {    
+    state.button_state = true;
+    state.start_temp = state.tempStatus;
+    digitalWrite(RELAY_PIN, LOW);
+    displayText(40, 33, "Wait for it!");
+    workKettle();
   }
-  
-  if (timing.first_click_time) {
-    uint32_t elapsed = millis() - timing.first_click_time;
-    timing.first_click_time = 0;
-    
-    if (elapsed > PRESS_TIME) state.button_mode = 1;
-  
-  pinMode(RELAY_PIN, OUTPUT);
-    if (elapsed > HOLD_TIME) state.button_mode = 2;
-  }
-  
-  return state.button_mode;
+  timing.display_time = millis();
+  countButtonClick = 0;
+  flagHueta = true;
 }
 
-void handleTemperatureSetting(uint8_t action) {
-  
-  if (action == 1) {
-    handleButtonPress();
-  } 
-  else if (action == 2) {
-    timing.setting_time = millis();
-    state.end_temp = TEMP_START_CONST;
-    
-    while (true) {
-      action = checkButtonAction();
-      if (millis() - timing.setting_time >= timing.end_settings){
+// ofTебаlи
+void kettleOffOn(){
+  if (millis() - timing.timeButtonBounce >= consts.HOLD_TIME){
+    if (countButtonClick == 1 && flagHueta){
+      state.button_state = !state.button_state;
+      if (state.button_state){
+        state.end_temp = 100;
+        checkTemp();
+      } else {
+        countButtonClick = 0;
+        flagHueta = true;
         state.power = true;
-        break;
+        digitalWrite(RELAY_PIN, HIGH);
       }
-      if (action == 1) {
-        timing.setting_time = millis();
+      countButtonClick = 0;
+    } else if (countButtonClick >= 2 || !flagHueta) {
+      if (flagHueta){
+        countButtonClick = 0;
+      }
+      flagHueta = false;
+      if (millis() - timing.timeButtonBounce >= consts.end_settings){
+        state.power = true;
+        countButtonClick = 0;
+        digitalWrite(RELAY_PIN, HIGH);
+        flagHueta = true;
+      }
+      if (countButtonClick == 1){
+        countButtonClick = 0;
         state.end_temp = (state.end_temp >= 100) ? TEMP_START_CONST : state.end_temp + TEMP_CHANGE_STEP;
+      } else if (countButtonClick >= 2){
+        countButtonClick = 0;
+        checkTemp();
       }
-      else if (action == 2) {
-        timing.setting_time = millis();
-        handleButtonPress();
-        break;
-      }
-      
-      u8g2.clearBuffer();
-      displayAdditionalText(10, 33, "Degrees: %dC", state.end_temp);
-      u8g2.sendBuffer();
-    }
+      if (!flagHueta){
+        u8g2.clearBuffer();
+        displayAdditionalText(10, 33, "Degrees: %dC", state.end_temp);
+        u8g2.sendBuffer();
+      }        
+    } 
+  }
+}
+
+void buttonTick() {
+  if (millis() - timing.timeButtonBounce >= consts.timeBottonDelay){
+    countButtonClick++;
+    timing.timeButtonBounce = millis();
+    //Serial.println(countButtonClick);
+  }
+  if (countButtonClick > 3){
+    digitalWrite(RELAY_PIN, HIGH);
+    flagHueta = true;
+    countButtonClick = 0;
   }
 }
 
@@ -256,66 +263,32 @@ void setup() {
   Serial.begin(9600);
   ds.begin();
   
-  attachInterrupt(BUTTON_PIN, buttonTick, FALLING);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  attachInterrupt(0, buttonTick, FALLING);
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(WATER_LEVEL_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, HIGH);
   
   for(uint8_t i = 0; i < NUM_INPUTS; i++) {
     pinMode(INPUT_PINS[i], INPUT);
   }
-  regulator.setDirection(NORMAL); // направление регулирования (NORMAL/REVERSE). ПО УМОЛЧАНИЮ СТОИТ NORMAL
-  regulator.setLimits(0, 255);    // пределы (ставим для 8 битного ШИМ). ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
-  regulator.setpoint = 50;        // сообщаем регулятору температуру, которую он должен поддерживать
-
-
-}
-
-void buttonTick() {
-  intFlag = !intFlag;   // подняли флаг прерывания
-  uint8_t action = checkButtonAction();
 }
 
 void loop() {
-  if (millis() - timing.last_check_level_water >= timing.check_change){
-    timing.lregulator.input = temp;ast_check_level_water = millis();
+  // Serial.println(getTemperature());
+  kettleOffOn();
+  if (millis() - timing.last_check_level_water >= consts.check_change){
+    timing.last_check_level_water = millis();
     if (state.water_level != getWaterLevel()){
       state.power = true;
     }
   }
   // Отображение логотипа при необходимости
-  if ((state.power_on && (millis() - timing.display_time >= LOGO_DISPLAY_TIME)) || 
-      state.power) {
+  if ((flagHueta && state.power_on && (millis() - timing.display_time >= consts.LOGO_DISPLAY_TIME)) || 
+      state.power && flagHueta) {
     state.power_on = false;
     state.power = false;
     displayLogo(37, 3);
   }
-
-  // Обработка действий пользователя
-  handleTemperatureSetting(action);
-
-  // Проверка температуры
-  if (getTemperature() >= state.end_temp) {
-    if (state.water_ok && state.button_state) {
-      timing.time_end = millis();
-      state.water_ok = false;
-      state.button_state = false;
-      displayText(37, 33, "Water ready");
-      timing.display_time = millis();
-      state.power_on = true;
-      state.end_temp = DEFAULT_TEMP_END;
-    }
-  } else {
-    state.water_ok = true;
-    regulator.input = temper();
-    analogWrite(RELAY_PIN, regulator.getResultTimer()); 
-    if (state.button_state) {
-      if (getTemperature() - 1 > state.start_temp) {
-        displayProgressBar();
-      }
-    }
-  }
-  if (timing.time_end && millis() - timing.time_end >= timing.time_end_const){
-    timing.time_end = 0;
-    digitalWrite(RELAY_PIN, HIGH);
-  }
 }
+
