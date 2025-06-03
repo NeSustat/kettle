@@ -20,18 +20,25 @@ const int8_t TEMP_CHANGE_STEP = 5;
 // const
 struct {
   uint16_t check_change = 10000;
-  uint8_t timeBottonDelay = 200;
+  uint8_t timeBottonDelay = 100;
   uint8_t constTimeCheckTemp = 0;
   uint16_t end_settings = 6000;
-  const uint16_t HOLD_TIME = 450;
-  const uint16_t LOGO_DISPLAY_TIME = 65056;
-  uint32_t timeEndHold = 60000 * 3;
+  const uint16_t HOLD_TIME = 320;
+  const uint64_t LOGO_DISPLAY_TIME = 60000 * 5;
+  uint64_t timeEndHold = LOGO_DISPLAY_TIME;
+  uint8_t deltaTemp = 3;
 } consts;
 
 // хуета и хуй мне в рот и род 
-uint8_t countButtonClick = 0;
-bool flagHueta = true;
-bool flagSpermoed = false;
+volatile uint8_t countButtonClick = 0;
+bool flagSettings = true;
+bool flagHoldTemp = false;
+bool flagFirstCheckButton = true; // отвечает за то будем ли мы брать время начала нажатия (чтобы брать только один раз)
+bool flagSecondCheckButton = false;
+uint32_t timeStartPress = 0;
+uint32_t timeEndPress = 0;
+bool flagWaterCheck = false;
+bool flagReadyWork = false;
 
 // Настройки времени
 
@@ -75,6 +82,8 @@ void checkTemp();
 void workKettle();
 void drawfLOGO();
 void tempMaintein();
+bool checkWAaterLevel();
+void workButton();
 
 // Логотип - оптимизированные функции рисования
 void drawF(int8_t x, int8_t y) {
@@ -160,6 +169,37 @@ uint8_t getWaterLevel() {
   return level;
 }
 
+bool checkWAaterLevel(){
+  if (getWaterLevel() >= 1){
+    return true;
+  }
+  displayText(32, 33, "low level water");
+  state.button_state = false;
+  return false;
+}
+
+// check temp
+void checkTemp(){
+  state.tempStatus = getTemperature();
+  if (state.tempStatus >= state.end_temp && state.tempStatus > 0) {
+    displayText(37, 33, "Water ready");
+    state.power_on = true;
+    state.button_state = false;
+    flagHoldTemp = true;
+    timing.timeEndWork = millis();
+    digitalWrite(RELAY_PIN, HIGH);
+  } else {    
+    state.button_state = true;
+    state.start_temp = state.tempStatus;
+    digitalWrite(RELAY_PIN, LOW);
+    displayText(40, 33, "Wait for it!");
+    workKettle();
+  }
+  timing.display_time = millis();
+  countButtonClick = 0;
+  flagSettings = true;
+}
+
 // работа чайника
 void workKettle(){
   countButtonClick = 0;
@@ -168,13 +208,13 @@ void workKettle(){
     if (millis() - timing.timeLastCheckTemp >= consts.constTimeCheckTemp){
       state.tempStatus = getTemperature();
       if (state.tempStatus >= state.end_temp && state.tempStatus > 0){
-        //Serial.println("Hui");
+        flagWaterCheck = false;
         displayText(37, 33, "Water ready");
         state.power_on = true;
         state.button_state = false;
         digitalWrite(RELAY_PIN, HIGH);
         timing.timeEndWork = millis();
-        flagSpermoed = false;
+        flagHoldTemp = true;
         timing.display_time = millis();
         break;
       }
@@ -187,96 +227,113 @@ void workKettle(){
 }
 
 void tempMaintein(){
-    if (flagSpermoed){
+    if (flagHoldTemp){
         state.tempStatus = getTemperature();
         if (millis() - timing.timeEndWork <= consts.timeEndHold){
             if (state.tempStatus >= state.end_temp){
                 digitalWrite(RELAY_PIN, HIGH);
-            } else if (state.tempStatus <= state.end_temp - 3){
+            } else if (state.tempStatus <= state.end_temp - consts.deltaTemp){
                 digitalWrite(RELAY_PIN, LOW);
             }
         } else{
-            flagSpermoed = false;
+            flagHoldTemp = false;
+            digitalWrite(RELAY_PIN, HIGH);
         }
     }
 }
 
-// check temp
-void checkTemp(){
-  state.tempStatus = getTemperature();
-  if (state.tempStatus >= state.end_temp && state.tempStatus > 0) {
-    //Serial.println(state.tempStatus);
-    // Serial.println(getTemperature());
-    displayText(37, 33, "Water ready");
-    state.power_on = true;
-    state.button_state = false;
-    flagSpermoed = true;
-    timing.timeEndWork = millis();
-    digitalWrite(RELAY_PIN, HIGH);
-  } else {    
-    state.button_state = true;
-    state.start_temp = state.tempStatus;
-    digitalWrite(RELAY_PIN, LOW);
-    displayText(40, 33, "Wait for it!");
-    workKettle();
-  }
-  timing.display_time = millis();
-  countButtonClick = 0;
-  flagHueta = true;
-}
-
 // ofTебаlи
 void kettleOffOn(){
-  if (millis() - timing.timeButtonBounce >= consts.HOLD_TIME){
-    if (countButtonClick == 1 && flagHueta){
-      state.button_state = !state.button_state;
-      if (state.button_state){
-        state.end_temp = 100;
+  if (countButtonClick == 1 && flagSettings){
+    state.button_state = !state.button_state;
+    if (state.button_state){
+      state.end_temp = 100;
+      if (checkWAaterLevel()){
+        flagReadyWork = false;
         checkTemp();
-      } else {
-        countButtonClick = 0;
-        flagHueta = true;
-        state.power = true;
-        digitalWrite(RELAY_PIN, HIGH);
       }
+    } else {
       countButtonClick = 0;
-    } else if (countButtonClick >= 2 || !flagHueta) {
-      if (flagHueta){
-        countButtonClick = 0;
-      }
-      flagHueta = false;
-      if (millis() - timing.timeButtonBounce >= consts.end_settings){
-        state.power = true;
-        countButtonClick = 0;
-        digitalWrite(RELAY_PIN, HIGH);
-        flagHueta = true;
-      }
-      if (countButtonClick == 1){
-        countButtonClick = 0;
-        state.end_temp = (state.end_temp >= 100) ? TEMP_START_CONST : state.end_temp + TEMP_CHANGE_STEP;
-      } else if (countButtonClick >= 2){
-        countButtonClick = 0;
+      flagSettings = true;
+      state.power = true;
+      digitalWrite(RELAY_PIN, HIGH);
+    }
+    countButtonClick = 0;
+  } else if (countButtonClick >= 2 || !flagSettings) {
+    if (flagSettings){
+      countButtonClick = 0;
+    }
+    flagSettings = false;
+    if (millis() - timing.timeButtonBounce >= consts.end_settings){
+      state.power = true;
+      countButtonClick = 0;
+      digitalWrite(RELAY_PIN, HIGH);
+      flagSettings = true;
+    }
+    if (countButtonClick == 1){
+      countButtonClick = 0;
+      state.end_temp = (state.end_temp >= 100) ? TEMP_START_CONST : state.end_temp + TEMP_CHANGE_STEP;
+    } else if (countButtonClick >= 2){
+      countButtonClick = 0;
+      flagSettings = true;
+      if (checkWAaterLevel()){
+        flagReadyWork = false;
         checkTemp();
       }
-      if (!flagHueta){
-        u8g2.clearBuffer();
-        displayAdditionalText(10, 33, "Degrees: %dC", state.end_temp);
-        u8g2.sendBuffer();
-      }        
-    } 
+    }
+    if (!flagSettings){
+      u8g2.clearBuffer();
+      displayAdditionalText(10, 33, "Degrees: %dC", state.end_temp);
+      u8g2.sendBuffer();
+    }        
+  }
+  flagReadyWork = false;
+}
+
+void workButton(){
+  if (!flagFirstCheckButton && millis() - timeStartPress >= consts.HOLD_TIME * 2){
+    countButtonClick = 1;
+    flagSecondCheckButton = false;
+    flagFirstCheckButton = true;
+    flagReadyWork = true;
+  }
+  if (flagSecondCheckButton){
+    if (timeEndPress - timeStartPress >= consts.HOLD_TIME){
+      countButtonClick = 2;
+    } else {
+      countButtonClick = 1;
+    }
+    flagSecondCheckButton = false;
+    flagFirstCheckButton = true;
+    flagReadyWork = true;
   }
 }
 
 void buttonTick() {
-  if (millis() - timing.timeButtonBounce >= consts.timeBottonDelay){
-    countButtonClick++;
+  if (millis() - timing.timeButtonBounce >= consts.timeBottonDelay || flagHoldTemp){
+    if (state.button_state){
+      state.button_state = false;
+      countButtonClick = 0;
+      flagSettings = true;
+      state.power = true;
+      digitalWrite(RELAY_PIN, HIGH);
+      flagHoldTemp = false;
+      return;
+    }
+    if (flagFirstCheckButton){
+      if (digitalRead(BUTTON_PIN) == 1){
+        timeStartPress = millis();
+        flagFirstCheckButton = false;
+        return;
+      }
+    } else {
+      if (digitalRead(BUTTON_PIN) == 0){
+        timeEndPress = millis();
+        flagSecondCheckButton = true;
+        return;
+      }
+    }
     timing.timeButtonBounce = millis();
-    //Serial.println(countButtonClick);
-  }
-  if (countButtonClick > 3){
-    digitalWrite(RELAY_PIN, HIGH);
-    flagHueta = true;
-    countButtonClick = 0;
   }
 }
 
@@ -288,8 +345,8 @@ void drawfLOGO(){
     }
   }
   // Отображение логотипа при необходимости
-  if ((flagHueta && state.power_on && (millis() - timing.display_time >= consts.LOGO_DISPLAY_TIME)) || 
-      state.power && flagHueta) {
+  if ((flagSettings && state.power_on && (millis() - timing.display_time >= consts.LOGO_DISPLAY_TIME)) || 
+      state.power && flagSettings) {
     state.power_on = false;
     state.power = false;
     displayLogo(37, 3);
@@ -304,7 +361,7 @@ void setup() {
   ds.begin();
   
   pinMode(BUTTON_PIN, INPUT_PULLUP);
-  attachInterrupt(0, buttonTick, FALLING);
+  attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonTick, CHANGE);
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(WATER_LEVEL_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, HIGH);
@@ -315,9 +372,13 @@ void setup() {
 }
 
 void loop() {
-  // Serial.println(getTemperature());
-  kettleOffOn();
+  workButton();
+  if (flagReadyWork){
+    kettleOffOn();
+  } else if (!flagSecondCheckButton && flagFirstCheckButton){
+    countButtonClick = 0;
+  }
   tempMaintein();
   drawfLOGO();
+  //Serial.println(getTemperature());
 }
-
