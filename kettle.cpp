@@ -20,27 +20,23 @@ const int8_t TEMP_CHANGE_STEP = 5;
 // const
 struct {
   uint16_t check_change = 10000;
-  uint8_t timeBottonDelay = 100;
+  uint8_t timeBottonDelay = 150;
   uint8_t constTimeCheckTemp = 0;
   uint16_t end_settings = 6000;
-  const uint16_t HOLD_TIME = 320;
-  const uint64_t LOGO_DISPLAY_TIME = 60000 * 5;
-  uint64_t timeEndHold = LOGO_DISPLAY_TIME;
-  uint8_t deltaTemp = 3;
+  const uint16_t HOLD_TIME = 400;
+  const uint32_t LOGO_DISPLAY_TIME_AND_END_HOLD = 60000 * 5;
 } consts;
 
 // хуета и хуй мне в рот и род 
 volatile uint8_t countButtonClick = 0;
 bool flagSettings = true;
 bool flagHoldTemp = false;
-bool flagFirstCheckButton = true; // отвечает за то будем ли мы брать время начала нажатия (чтобы брать только один раз)
+bool flagFirstCheckButton = true;
 bool flagSecondCheckButton = false;
 uint32_t timeStartPress = 0;
 uint32_t timeEndPress = 0;
 bool flagWaterCheck = false;
 bool flagReadyWork = false;
-
-// Настройки времени
 
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature ds(&oneWire);
@@ -229,10 +225,10 @@ void workKettle(){
 void tempMaintein(){
     if (flagHoldTemp){
         state.tempStatus = getTemperature();
-        if (millis() - timing.timeEndWork <= consts.timeEndHold){
+        if (millis() - timing.timeEndWork <= consts.LOGO_DISPLAY_TIME_AND_END_HOLD){
             if (state.tempStatus >= state.end_temp){
                 digitalWrite(RELAY_PIN, HIGH);
-            } else if (state.tempStatus <= state.end_temp - consts.deltaTemp){
+            } else if (state.tempStatus <= state.end_temp - 3){
                 digitalWrite(RELAY_PIN, LOW);
             }
         } else{
@@ -324,13 +320,11 @@ void buttonTick() {
       if (digitalRead(BUTTON_PIN) == 1){
         timeStartPress = millis();
         flagFirstCheckButton = false;
-        return;
       }
     } else {
       if (digitalRead(BUTTON_PIN) == 0){
         timeEndPress = millis();
         flagSecondCheckButton = true;
-        return;
       }
     }
     timing.timeButtonBounce = millis();
@@ -345,7 +339,7 @@ void drawfLOGO(){
     }
   }
   // Отображение логотипа при необходимости
-  if ((flagSettings && state.power_on && (millis() - timing.display_time >= consts.LOGO_DISPLAY_TIME)) || 
+  if ((flagSettings && state.power_on && (millis() - timing.display_time >= consts.LOGO_DISPLAY_TIME_AND_END_HOLD)) || 
       state.power && flagSettings) {
     state.power_on = false;
     state.power = false;
